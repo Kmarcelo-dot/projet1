@@ -1,4 +1,4 @@
-# projet 1 : Determinants du Diabete
+# projet 1 : "Modèle de prédiction du Diabète"
 Portfolio Marcelo KALONJI
 
 ## Introduction :
