@@ -1,0 +1,747 @@
+---
+title: "Projet Diabete"
+author: "Marcelo KALONJI ILUNGA"
+date: "2025-12-07"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+subtitle: "Prediction du Diabète chez la femme à partir des données clinique"
+---
+
+## PLAN DU PROJET
+
+- CHAP 0. Introduction <br>
+- Chap 1 : Packages et Importation des données <br>
+- Chap 2 : Traitement et Analyse des Données <br>
+      2.1. Traitement et Analyse <br>
+      2.2. Autres analyses <br>
+- Chap 3 : Conclusion <br>
+
+
+## CHAP 0. INTRODUCTION
+
+**0.1. Information générale**
+
+Source        : UCI Machine Learning Repository
+Lien source   : https://archive.ics.uci.edu/dataset/34/diabetes
+Population    : Femmes Pima de 21 ans et plus, vivant dans l’aire de Phoenix (Arizona, USA).
+Taille        : 768
+Variables     : 9
+Mots clés     : diabetes, pima, prediction, indian
+
+**!!! Note : Pour les besoins du projet, nous avons dû faire du Big Data. L’utilisation de Spark via sparklyr va impliquer une phase d’initialisation plus longue et des traitements potentiellement plus lents.**
+
+
+**0.2. Justification** <br>
+
+Le diabète constitue un enjeu majeur de santé publique, tant par sa prévalence (En France, la prévalence du diabète traité à 5,6 % en 2022, source : Santé publique France) que par les coûts économiques qu’il génère pour les systèmes de santé. 
+
+Identifier précocement les individus à risque représente donc un levier essentiel pour optimiser la prévention, réduire les complications et limiter les dépenses associées. Dans ce contexte, l’utilisation d’outils de modélisation prédictive fondés sur des données médicales offre une opportunité d’améliorer l’allocation des ressources et d’éclairer la prise de décision.
+
+L’intérêt du projet est double. Sur le plan analytique, il permet de tester la performance de modèles prédictifs et Sur le plan économique, il éclaire les stratégies d’intervention ciblée et les choix d’allocation optimale des ressources sanitaires.
+
+L’objectif est de construire un modèle permettant de prédire la probabilité qu’une patiente développe un diabète.Ainsi, ce travail contribue à illustrer comment les méthodes quantitatives, appliquées à des données de santé, peuvent soutenir la décision publique et améliorer l’efficience des systèmes de soins.
+
+**0.3. Question de recherche** <br>
+Peut-on prédire de façon fiable le diabète chez la femme à partir de variables cliniques ?
+
+
+NB : Des questions sont posées devant chaque groupe de code pour aider à la compréhension de l'ensemble du document.
+
+**0.4. Variable	Description** <br>
+
+- Pregnancies               :	Nombre de grossesses <br>
+- Glucose	                  : Concentration plasmatique en glucose à 2h <br>
+- BloodPressure             :	Pression artérielle diastolique (mm Hg) <br>
+- SkinThickness             :	Épaisseur du pli cutané tricipital (mm) <br>
+- Insulin                   :	Insuline sérique à 2h (mu U/ml) <br>
+- BMI	                      : Body Mass Index (poids / taille²) <br>
+- DiabetesPedigreeFunction	: Fonction de prédisposition génétique au diabète <br>
+- Age                       :	Âge (années) <br>
+- Outcome                   : 0 = non diabétique, 1 = diabétique <br>
+
+NB : L'ensemble de ces variables permettent de prédire le diabète chez la femme.
+
+
+## CHAP 1 : PACKAGES ET IMPORTATION DES DONNEES
+
+### 1.1. PREPARATION DE L'ESPACE DE TRAVAIL & INSTALLATION DES PACKAGES
+
+**Preparation de l'espace de travail**
+```{r}
+cat("\014") #Nettoyage de la console.
+rm(list=ls()) #Nettoyage de l'environnement
+
+```
+
+**Installation des packages**
+```{r}
+# Traitement des données
+library(dplyr)
+
+# Graphique
+library(ggplot2)
+
+# Analyse statistique avancée et Big Data
+library(corrplot)
+library(sparklyr)
+library(pROC)
+library(tseries)
+
+# Pour l'Analyse en Composant Principal (ACP)
+library(FactoMineR)
+library(factoextra)
+
+```
+
+### 1.2. IMPORTATION DES DONNEES
+
+**Importation de la base des données**
+```{r}
+diabetes<- read.csv("Y:/1. Ich/3. Studiums/1. Master(s)/2.1. Master 2/1. Kurs/5. Introduction R/1. Projet/Projet R Groupe 4/Original.csv", sep=",") 
+
+head(diabetes)
+```
+
+## CHAP 2 : TRAITEMENT ET ANALYSE DES DONNEES 
+
+### 2.1. TRAITEMENT DES DONNEES
+
+**TYPE DES DONNEES**
+```{r}
+str(diabetes)
+```
+
+**Commentaire :** Toutes les variables de la base des données 'Diabetes' sont Quantitatives à l'exception de la variable 'Outcome' qui est une variable qualitative (binaire).
+
+**REGROUPEMENT DES DONNEES**
+```{r}
+variables_quantitatives <- c("Pregnancies", "Glucose", "BloodPressure", 
+                             "SkinThickness", "Insulin", "BMI", 
+                             "DiabetesPedigreeFunction", "Age")
+
+variables_qualitative <- c("Outcome")
+
+cat("Variables quantitatives:", paste(variables_quantitatives, collapse = ", "), "\n")
+cat("Variable qualitative:", variables_qualitative, "\n")
+
+```
+
+**Commentaire :** Nous avons regroupé les variables en fonction de leur type (Variables Quantitatives et Qualitatives).
+
+
+### 2.2. TRAITEMENT DES VALEURS MANQUANTES 
+
+**IDENTIFICATION DES VALEURS MANQUANTES (NA)**
+
+```{r}
+colSums(is.na(diabetes))
+
+```
+
+**Commentaire :** Nous avons dans l'ensemble, aucune valeur manquante (NA) dans la base des données. 
+
+
+**IDENTIFICATION DES VALEURS ABERRANTES**
+
+```{r}
+summary(diabetes[,variables_quantitatives])
+```
+
+**Commentaire :**  
+Après le résumé de toutes les variables, nous avons remarqué que certaines variables ont des valeurs anormales.
+Certaines variables comme Glucose, BloodPressure, SkinThickness, Insulin et BMI ne peuvent logiquement pas être égales à zéro (avoir une valeur égal à zéro), mais notre dataset contient des valeurs zéro pour ces champs. Comme le montre la statistique sommaire des variables quantitatives.
+Il s'agit des variables ("Glucose", "BloodPressure", "SkinThickness", "Insulin", "BMI") - Noté ici : 'var_prob'.
+
+```{r}
+
+# Identification des variables problématiques. 
+var_prob <- c("Glucose", "BloodPressure", "SkinThickness", "Insulin", "BMI") 
+
+
+cat(sprintf("Nombre d'observations contenant la valeur '0'  par Variable\n"))
+cat(sprintf("NB: '0' est potentiellement manquantes\n"))
+
+# Comptage des variables avec des valeurs zéro. 
+for(col in var_prob) {
+  val_zero <- sum(diabetes[[col]] == 0, na.rm = TRUE)
+  cat(sprintf("- %s : %d \n", col, val_zero))
+}
+
+```
+
+**Commentaire :** 
+De nos variables, deux ont présenté un nombre élevé d'observation avec la valeur zéro. Il s'agit de la variable "Insulin" et "SkinThickness". Pour s'assurer de ne pas perdre toutes les informations de nos variables. Nous allons procéder à un traitement de ces informations. 
+Pour si faire, nous comptons traiter ses données ensuite comme des valeurs manquantes.
+
+
+**REMPLACEMENT**
+
+```{r}
+# Remplacons la valeur 0 par NA pour toutes ces variables 
+
+diabetes_nettoye<- diabetes %>%
+  mutate(
+    Glucose = ifelse(Glucose == 0, NA, Glucose),
+    BloodPressure = ifelse(BloodPressure == 0, NA, BloodPressure),
+    BMI = ifelse(BMI == 0, NA, BMI),
+    SkinThickness = ifelse(SkinThickness == 0, NA, SkinThickness),
+    Insulin = ifelse(Insulin == 0, NA, Insulin)
+  )
+
+```
+
+**Commentaire :** 
+Nous avons ainsi remplacé, pour toutes les variables identifiées comme problématique, la valeur 'NA' à la place de 'zéro'.
+
+
+
+**GESTION DES VALEURS MANQUANTES**
+
+**Commentaire :**
+Il existe plusieurs méthodes de traitement des valeurs manquantes parmi lesquelles on a :
+- Traitement par Suppression, il consiste à la suppression des observations ou des variables avec de NA.
+- Traitement par Imputation par une valeur fixe ou par groupe. On peut attribuer à la NA la valeur 0, la moyenne, la médiane ou le mode.
+- Traitement par Régression ou modèles prédictifs pour estimer les NA
+- Méthodes spécifiques aux séries temporelles (interpolation, ...)
+
+Dans notre cas, nous allons procéder par la méthode d'imputation par la médiane.
+
+**IMPUTATION PAR LA MEDIANE**
+
+```{r}
+impute_median <- function(x) {
+  x[is.na(x)] <- median(x, na.rm = TRUE)
+  return(x)
+} # définition de la fonction.
+
+# Remplacement de NA que sur les variables 'var_prob' 
+diabetes_base <- diabetes_nettoye %>%
+  mutate(across(all_of(var_prob), impute_median))
+
+# Vérification
+summary(diabetes_base[,var_prob])
+```
+
+
+### 2.2. TRAITEMENT DES OUTLIERS
+
+**IDENTIFICATION DES OUTLIERS**
+
+```{r}
+diabetes_b <- diabetes_base %>% 
+  pivot_longer(
+    cols = variables_quantitatives,     # colonnes à transformer
+    names_to = "variable",              # nom de la nouvelle colonne des variables
+    values_to = "value"                 # nom de la nouvelle colonne des valeurs
+  )
+
+ggplot(diabetes_b,
+       aes(x = factor(Outcome), y = value, fill = factor(Outcome))) +
+  geom_boxplot() +
+  facet_wrap(~ variable, scales = "free") +
+  labs(title = "Distribution des variables par présence de diabète",
+       x = "Diabète (0 = Non, 1 = Oui)",
+       y = "Valeur observée") +
+  theme_minimal()
+```
+
+**Commentaire :** 
+Nous avons trouvé des outliers presque pour toutes les variables (voir le graphique boxplot).  
+
+
+**Courte Interprétation :**
+Dans l'ensemble, le graphique montre des différences nettes entre patientes diabétiques et non diabétiques. 
+
+  **1. Age**
+  L’âge médian tend à être plus élevé chez les patientes diabétiques. Et on remarque un plus grand nombre des valeurs extrêmes chez les patients non diabétiques.
+  
+  **2. La pression artérielle (BloodPressure)** 
+  La PA Diastolique est globalement similaire entre les deux groupes, bien que les valeurs extrêmes semblent plus fréquentes chez les patientes diabétiques. 
+  
+  **3. BMI** 
+  Le BMI est clairement plus élevé chez les femmes diabétiques, ce qui pourrait être dû au rôle central du surpoids et de l’obésité comme facteur de risque métabolique. 
+  
+  **4. La fonction héréditaire du diabète (DiabetesPedigreeFunction)** 
+  La DPF montre une légère augmentation dans le groupe diabétique, peut être lié à l’histoire familiale ou une question génétique. 
+  
+  **5. Le glucose**
+  La glycémie présente une différence marquée, les patientes diabétiques ont des valeurs nettement plus élevées. Normal, car on parle des patientes diabétiques (définition de la      maladie). 
+  
+  **6. L’insuline** 
+  Le dosage de l'insuline révèle une forte variabilité dans les deux groupes, avec un grand nombre des valeurs extrêmes. 
+  
+  **7. Le nombre de grossesses (Pregnancies)**
+  Le nombre médian de grossesse est légèrement plus élevé chez les diabétiques, avec un IQR plus large que chez les non diabétiques. 
+  
+  **L’épaisseur du pli cutané (SkinThickness)** 
+  On ne sait voir une nette différence entre les deux médianes. Et il est clair que des valeurs extrêmes se dégagent dans les deux groupes. 
+
+
+**COMPTAGE DES OUTLIERS**
+
+Critère d'identification :
+Pour pouvoir identifier les outliers, nous avons procédé par la méthode d'IQR. Elle repose sur l’analyse de la dispersion centrale d’une variable. Elle passe par le calcul de Q1, Q3 et du IQR, Pour definir la limite basse et haute.Ainsi toutes valeurs en dessous de la limite basse ou au-dessus de la limite haute est considérées comme abérrantes. 
+
+
+```{r}
+
+# Détection des outliers avec la méthode IQR
+detect_outliers <- function(x) {
+  Q1 <- quantile(x, 0.25)
+  Q3 <- quantile(x, 0.75)
+  IQR <- Q3 - Q1
+# Calcule de la limite basse et haute. 
+  
+  lower_bound <- Q1 - 1.5 * IQR
+  upper_bound <- Q3 + 1.5 * IQR
+  return(x < lower_bound | x > upper_bound)
+}
+
+# Comptage des outliers par variable
+
+outliers_summary <- sapply(diabetes_base[, variables_quantitatives], 
+                           function(x) sum(detect_outliers(x)))
+print("Nombre d'outliers par variable:")
+print(outliers_summary)
+
+```
+
+**Commentaire :**
+La variable 'Insulin' presente un grand nombre de valeurs extrêmes soit 346 (45%) et s'ensuite la variable 'skinThickness' (11%). Toutes les autres variables ont moins de 5%.
+
+
+**TRAITEMENT DES OUTLIERS - Par Winsorisation**
+
+**Commentaire :**
+Nous traiterons les outliers par methode 'Winsorisation'. (méthode conservatrice),
+Dans cette méthode on remplace les valeurs extrêmes par le 5e et le 95e percentile
+- On remplace les valeurs < q5% par q5%
+- On remplace les valeurs > q95% par q95%
+
+Pour ainsi avoir notre base des données final 'diabetes_final'. 
+
+```{r}
+Conservation <- function(x, limits = c(0.05, 0.95)) {
+  q <- quantile(x, probs = limits, na.rm = TRUE)
+  x[x < q[1]] <- q[1]
+  x[x > q[2]] <- q[2]
+  return(x)
+}
+
+diabetes_final <- diabetes_base %>%
+  mutate(across(all_of(variables_quantitatives), Conservation))
+
+```
+
+
+### 2.4. ANALYSE DES DONNEES
+
+2.4.1. VISUALISATION ET EXPLORATION
+
+**GRAPHIQUES PERTINENTS**
+
+Etant donné que nos variables sont quantitatives hormis la variable dépendante, les graphiques les plus pertinents pour visualiser ces variables liées au diabète sont :
+Histogramme, BoxPlot, Matrice de corrélation et Scatter.
+
+A. HISTOGRAMME VARIABLES QUANTITATIVES
+
+**QUESTION : Comment la distribution de chaque variable quantitative se présente-t-elle globalement dans l'échantillon ?**
+
+
+```{r}
+
+par(mfrow = c(3, 3))
+for(col in variables_quantitatives) {
+  hist(diabetes_final[[col]], main = col, xlab = col, col = "lightblue")
+}
+par(mfrow = c(1, 1))
+```
+
+**1. Pregnancies**
+La distribution est très asymétrique à droite, la majorité des femmes ont eu peu de grossesses (0 à 2), et les valeurs élevées sont rares.
+
+**2. Glucose**
+La glycémie suit une distribution décalée vers la droite, avec beaucoup de valeurs autour de 100–130 mg/dl et quelques valeurs très élevées.
+
+**3. BloodPressure**
+La pression artérielle est un peu centrée autour de 70–80 mmHg, avec une faible dispersion et peu des valeurs extrêmes. On a quand même une tranche d'âge à droite un peu plus élevé.
+
+**4. SkinThickness**
+La majorité des valeurs se situent entre 20 et 35 mm, mais la distribution reste étalée et légèrement asymétrique.
+
+**5. Insulin**
+La distribution est très irrégulière et asymétrique, marquée par un grand nombre de valeurs faibles et quelques pointes isolées très élevées.
+
+**6. BMI**
+Le BMI est concentré entre 25 et 40. La majorité des patientes sont en surpoids ou obèses.
+
+**7. DiabetesPedigreeFunction (DPF)**
+La distribution est très asymétrique à droite, avec beaucoup de valeurs faibles et une longue queue vers les valeurs élevées.
+
+**8. Age**
+L’âge est concentré entre 20 et 40 ans, avec une décroissance progressive vers les âges plus élevés, ce qui confirme un échantillon majoritairement jeune.
+
+
+B. BOXPLOT EN FCT OUTCOME
+
+**QUESTION : Quelles différences les boxplots mettent-ils en évidence entre les patientes diabétiques (1) et non diabétiques (0) pour chaque variable, en se concentrant sur les médianes et les intervalles interquartiles (IQR) ?**
+
+```{r}
+# 2. Boxplots par outcome
+diabetes_b <- diabetes_final %>% 
+  pivot_longer(
+    cols = variables_quantitatives, # colonnes à transformer
+    names_to = "variable",  # nom de la nouvelle colonne des variables
+    values_to = "value" # nom de la nouvelle colonne des valeurs
+  )
+
+ggplot(diabetes_b,
+       aes(x = factor(Outcome), y = value, fill = factor(Outcome))) +
+  geom_boxplot() +
+  facet_wrap(~ variable, scales = "free") +
+  labs(title = "Distribution des variables par présence de diabète",
+       x = "Diabète (0 = Non, 1 = Oui)",
+       y = "Valeur observée") +
+  theme_minimal()
+```
+
+Après le traitement des outliers par la méthode de Winsorisation, on remarque que la méthode a corrigé le problème pour la majorité des variables. Pour la variable 'Insulin' le nombre élevé (45%) des valeurs extrêmes pourrait justifier la persistance de quelques valeurs extrêmes. 
+
+
+C. MATRICE DE CORRELATION
+
+**QUESTION : Quelles sont les relations linéaires les plus fortes observées entre les variables quantitatives elles-mêmes ?**
+
+```{r}
+matrice_cor <- round(cor(diabetes_final[, variables_quantitatives]),2)
+corrplot(matrice_cor, method = "color", type = "upper", title = "Matrice de corrélation des variables quantitatives")
+```
+
+
+D. SCATTER PLOT 
+
+**QUESTION : Comment les valeurs de chaque variable quantitative sont-elles réparties en fonction du statut diabétique (Outcome) ?**
+
+```{r}
+df_long <- diabetes_final %>%
+  select(all_of(c("Outcome", variables_quantitatives))) %>%
+  pivot_longer(cols = all_of(variables_quantitatives), 
+               names_to = "Variable", 
+               values_to = "Valeur")
+
+ggplot(df_long, aes(x = Outcome, y = Valeur, color = Outcome)) +
+  geom_jitter(width = 0.2, alpha = 0.7) + 
+  facet_wrap(~Variable, scales = "free_y") +
+  labs(
+    title = "Distribution des variables quantitatives par Outcome",
+    x = "Outcome (0 = non diabétique, 1 = diabétique)",
+    y = "Valeur"
+  ) +
+  theme_minimal()
+
+```
+
+
+E. DENSITE DES VARIABLES SELON L'OUTCOME
+
+**QUESTION : Quelle est la forme générale (densité) de la distribution de chaque variable ?**
+
+```{r}
+
+ggplot(df_long, aes(x = Valeur, fill = Outcome)) +
+  geom_density(alpha = 0.5) +
+  facet_wrap(~Variable, scales = "free") +
+  theme_minimal() +
+  labs(title = "Densité des variables selon l’Outcome")
+```
+
+
+2.4.2. ANALYSE APPROFONDIE DES VARIABLES QUANTITATIVES
+
+**A. RELATION ENTRE BMI ET GLUCOSE**
+
+**QUESTION : Quelle est la tendance observée entre l'Indice de Masse Corporelle (BMI) et le taux de Glucose ?**
+
+```{r}
+ggplot(diabetes_final, aes(x = BMI, y = Glucose, color = Outcome)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm") +
+  theme_minimal() +
+  labs(title = "Relation entre BMI et Glucose")
+
+```
+**Commentaire :**
+
+- La droite de régression indique une tendance croissante :
+- Lorsque l'indice de masse corporel augmente, le niveau de glucose a tendance à augmenter également.
+- Même si la relation n’est pas très forte (points très dispersés), elle est clairement positive.
+- Cela correspond à l’idée que le surpoids ou l’obésité peuvent s’accompagner d’une altération du métabolisme du glucose.
+
+
+**B. ANALYSE EN COMPOSANT PRINCIPAL (ACP)**
+
+**QUESTION : Comment la projection des individus diabétiques se distingue-t-elle sur ce plan factoriel ?**
+
+```{r}
+
+
+# PCA sans graphique
+pca <- PCA(diabetes_final %>% select(all_of(variables_quantitatives)),
+           graph = FALSE)
+
+# Récupération des coordonnées
+coords <- as.data.frame(pca$ind$coord)
+coords$Outcome <- diabetes_final$Outcome
+
+ggplot(coords, aes(x = Dim.1, y = Dim.2, color = Outcome)) +
+  geom_point(alpha = 0.7) +
+  theme_minimal() +
+  labs(
+    title = "ACP : individus projetés sur les axes 1 et 2",
+    x = paste0("Dim 1 (", round(pca$eig[1,2], 1), "%)"),
+    y = paste0("Dim 2 (", round(pca$eig[2,2], 1), "%)")
+  )
+
+
+```
+
+**Commentaire :**
+
+- Ce graphique représente la projection des individus  sur les deux premiers axes de l’Analyse en Composantes Principales (ACP). On remarque que:
+- L'axe 1 (Dim 1) explique 29,8 % de la variance totale,
+- L'axe 2 (Dim 2) explique 18,5 % de la variance totale.
+- Ensemble, ces deux axes capturent environ 48 % de l’information contenue dans les variables quantitatives.
+- Les individus diabétiques (bleu clair) sont un peu plus présents dans la partie droite du graphique  et dans certaines zones hautes.
+- Cela suggère qu'ils sont associés à certaines valeurs extrêmes des variables (souvent glucose, BMI, insulin).
+
+
+**C. CORRELATION ENTRE LE TAUX DE GLUCOSE ET DIABETE**
+
+**QUESTION : Quel est le coefficient de corrélation entre le taux de Glucose et le statut diabétique (Outcome) ?**
+
+La variable binaire Outcome etant dejà codifiée, alors on peut directement trouver la matrice de correlation
+Calcul de la corrélation point-bisériale
+
+```{r}
+correlation <- cor(diabetes_base$Glucose, diabetes_base$Outcome, method = "pearson")
+cat(sprintf("Corrélation entre Glucose et Outcome: %.3f\n", correlation))
+
+```
+
+**Commentaire :**
+La corrélation entre le taux de glucose et le statut diabétique est de 0.493,
+Ce qui indique une relation positive et relativement forte.
+Cela signifie que les individus ayant un taux de glucose plus élevé présentent davantage de probabilités d’être diabétiques. 
+Ce résultat est cohérent avec les connaissances médicales sur la physiopathologie du diabète.
+
+
+
+**D. IDENTIFICATION DES PATIENTS A RISQUES**
+
+**QUESTION : Sur la base des critères définis, combien de patientes non diabétiques sont identifiées comme ayant au moins un facteur de risque ? **
+
+```{r}
+# base des données des patients sans diabètes
+diabetes_non_diab <- filter(diabetes, Outcome ==0) 
+
+```
+
+
+```{r}
+
+# Identification des patients à risques.
+
+diabetes_risque <- diabetes_non_diab %>%
+mutate(
+    glucose_eleve = Glucose >= 140,  # Seuil prédiabète/diabète
+    bmi_eleve = BMI >= 30,           # Obésité
+    age_avance = Age >= 45,           # Âge avancé
+    pregnancies_multiple = Pregnancies > 3, # Grossesses multiples
+    BloodPressure_eleve = BloodPressure >90,
+    SkinThickness_eleve=SkinThickness >26,
+    DPF_eleve=DiabetesPedigreeFunction>0.6262, #nous avons pris dans ce cas le 3e Quartiles coe élevé donc à risque
+    score_de_risque = (glucose_eleve + bmi_eleve + age_avance + pregnancies_multiple + BloodPressure_eleve + SkinThickness_eleve + DPF_eleve) 
+  ) %>%
+  filter(score_de_risque >= 1) %>%  # Patients avec au moins 1 facteur de risque
+  arrange(desc(score_de_risque))
+cat("Nombre de patients identifiés 'à risque':", nrow(diabetes_risque), "\n")
+
+```
+**Commentaires :**
+
+Les patients ayant un risque de faire le diabète, ont commme critères :
+- Glucose > 140
+- BMI > 30 (Obèsité)
+- Age avancé > 30
+- Pregnancies > 3 (Nbre de grossesse supérieur à 3)
+- Pression Diastolique > 90
+- SkenThickness > 26
+- DFP > 3e Quartile
+
+Le Nombre total de patients avec un risque de faire le diabète est de 401. 
+
+**NB :** 
+Ce résultat dépend des critères retenus : la littérature propose des définitions variables selon les auteurs. De plus, nous avons compté tout patient ayant au moins un facteur de risque, sans distinguer l’importance relative de chaque facteur (car certains facteurs sont des facteurs plus ou moins à risque que d'autres), ce qui peut influencer l’interprétation.
+
+
+
+**E. MODELISATION et MACHINE LEARNING (Sparklyr)**
+
+**QUESTION : Quelles sont les variables qui dominent le modèle de régression logistique ?**
+
+L'idée pour cette étape, consiste avoir comment grâce au Big Data, on arrive à entrainer un modèle capable de prédire les personnes à risque à fonction de certains facteurs. Dans notre cas, il s'agit de nos variables 'Glucose', 'BMI', 'Age', 'Pregnancies', 'Pression Diastolique', 'SkenThickness', 'DFP'.
+
+Importation Base sur Spark
+
+```{r}
+sc <- spark_connect(master = "local")
+
+# Copier les données dans Spark
+diabetes_spark <- copy_to(sc, diabetes_final, "diabetes_spark", overwrite = TRUE)
+
+```
+
+
+Tirage jeu des données et Répartition (80%,20%)
+
+```{r}
+# Division en train/test (80/20)
+split_data <- diabetes_spark %>%
+  sdf_random_split(training = 0.8, test = 0.2, seed = 123)
+
+train_data <- split_data$training
+test_data <- split_data$test
+
+cat("Taille du jeu d'entraînement:", sdf_nrow(train_data), "\n")
+cat("Taille du jeu de test:", sdf_nrow(test_data), "\n")
+
+```
+
+**Commentaire :**  Le jeu d'entrainement est composé de 80% de notre base de données et 20% pour le jeu de test. 
+
+
+Création du Modèle de régression logistique (Variable : Outcome)
+
+```{r}
+logit_model <- ml_logistic_regression(
+  train_data,
+  formula = Outcome ~ Pregnancies + Glucose + BloodPressure + 
+    SkinThickness + Insulin + BMI + 
+    DiabetesPedigreeFunction + Age)
+logit_model
+```
+
+
+
+**F. PREDICTIONS VIA LE JEU TEST** 
+
+Application du modèle sur le jeu test. 
+
+```{r}
+predictions <- ml_predict(logit_model, test_data)
+predictions
+```
+
+**Commentaire :**
+Les variables 'DiabetesPedigreeFunction', 'Glucose' et 'BMI' dominent largement le modèle.
+Ces variables reflètent respectivement l’hérédité, le métabolisme du sucre et le métabolisme général.
+
+D'un autre côté, les variables 'Pregnancies' et 'Age' ont un impact modéré mais pertinent pour les populations cibles.
+et les variables 'BloodPressure' et 'SkinThickness' ont des effets un peu plus faibles.
+
+
+Extraction des prédictions et les vraies valeurs
+
+```{r}
+predictions_df <- predictions %>%
+  select(Outcome, prediction, probability) %>%
+  collect()
+```
+
+
+**G. EVALUATION DE LA PERFORMANCE DU MODELE**
+
+**QUESTION : Quelles sont les métriques de performance obtenues (Ex : Accuracy, Precision, Recall, F1-Score, AUC)?**
+
+Mise en de la Matrice de confusion
+
+```{r}
+conf_matrix <- table(
+  Actual = predictions_df$Outcome,
+  Predicted = ifelse(predictions_df$prediction > 0.5, 1, 0)
+)
+print("Matrice de confusion:")
+print(conf_matrix)
+```
+
+Métriques de performance
+
+```{r}
+accuracy <- sum(diag(conf_matrix)) / sum(conf_matrix)
+precision <- conf_matrix[2, 2] / sum(conf_matrix[, 2])
+recall <- conf_matrix[2, 2] / sum(conf_matrix[2, ])
+f1_score <- 2 * (precision * recall) / (precision + recall)
+
+cat(sprintf("Accuracy: %.3f\n", accuracy))
+cat(sprintf("Precision: %.3f\n", precision))
+cat(sprintf("Recall: %.3f\n", recall))
+cat(sprintf("F1-Score: %.3f\n", f1_score))
+```
+
+
+Courbe ROC
+
+```{r}
+roc_obj <- roc(predictions_df$Outcome, predictions_df$prediction)
+plot(roc_obj, main = "Courbe ROC")
+auc_value <- auc(roc_obj)
+cat(sprintf("AUC: %.3f\n", auc_value))
+```
+
+**Commentaire :**
+Le modèle montre une performance globalement correcte, mais avec un déséquilibre important entre la détection du diabète et la reconnaissance de son absence. En effet, il identifie correctement 90,5 % des personnes non diabétiques (Spécificité élevée), et seulement 64,7 % des personnes diabétiques, soit une sensibilité insuffisante. 
+Ce comportement confirme que le modèle est surtout efficace pour prédire “Les non diabètiques”, mais nettement moins pour repérer les diabètiques.
+Cette conclusion est confirmée par la courbe de ROC. 
+
+REPONSE : La performance du modèle a été évaluée à partir de la courbe de ROC. 
+
+
+**H. IMPACT DU DESEQUILIBRE DES CLASSES SUR LE MODELE**
+
+**QUESTION : Quel est l'impact principal du déséquilibre des classes sur les performances du modèle ?**
+
+Vérifier le déséquilibre dans les prédictions
+
+```{r}
+predicted_class <- ifelse(predictions_df$prediction > 0.5, 1, 0)
+prop.table(table(predicted_class)) * 100
+
+
+```
+
+**Commentaire :**
+
+L'impact du désequilibre pourrait être :
+
+- Un biais vers la classe majoritaire c'est-à-dire le modèle a tendance à prédire la classe la plus fréquente (“pas de diabète”) pour maximiser l’accuracy globale.
+- La réduction de la sensibilité pour la classe minoritaire c'est-à-dire les vrais diabétiques sont moins détectés, augmentant le nombre de faux négatifs.
+- Une apparente haute performance globale . 
+
+
+## CHAP 3. CONCLUSION
+
+Ce projet a permis de construire un modèle prédictif du diabète chez la femme à partir du dataset Pima Indians. Les variables Glucose, BMI et DiabetesPedigreeFunction se sont révélées déterminantes. Le modèle atteint une accuracy globale correcte (~80 %) et une excellente spécificité (90,5 %), mais une sensibilité limitée (64,7 %) due au déséquilibre des classes. Il identifie bien les patientes non diabétiques mais manque trop de cas réels de diabète (faux négatifs). Ce biais, classique dans les données médicales déséquilibrées, réduit l’utilité clinique du modèle en l’état. Des techniques de rééquilibrage (SMOTE, pondération) ou des algorithmes plus avancés amélioreraient nettement la détection des vraies diabétiques. En conclusion, la modélisation prédictive offre un outil prometteur pour le dépistage précoce, à condition de corriger le biais vers la classe majoritaire et de privilégier la sensibilité dans l’évaluation finale.
+
+**ENREGISTREMENT DE LA BASE FINALE en .Rdata**
+```{r}
+
+save(diabetes_final, file = "Y:/1. Ich/3. Studiums/1. Master(s)/2.1. Master 2/1. Kurs/5. Introduction R/1. Projet/Projet R Groupe 4/final.Rdata") # enregistre sous .Rdata
+
+```
+
+
+
+
+
