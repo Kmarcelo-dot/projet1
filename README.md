@@ -1,5 +1,6 @@
 # projet 1 : "Modèle de prédiction du Diabète"
-Portfolio Marcelo KALONJI
+Auteur : Marcelo KALONJI
+Collaborateur : Vhan Aurel NDINGA
 
 ## Introduction :
 Ce projet vise à prédire l’apparition du diabète chez des patientes adultes à partir de variables médicales et biologiques, à l’aide de méthodes de machine learning supervisé.
