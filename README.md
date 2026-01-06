@@ -1,5 +1,5 @@
 # projet 1 : "Modèle de prédiction du Diabète"
-Auteur : Marcelo KALONJI
+Auteur : Marcelo KALONJI <br>
 Collaborateur : Vhan Aurel NDINGA
 
 ## Introduction :
